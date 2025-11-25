@@ -16,7 +16,7 @@ from waitress import serve
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "troque_esta_chave_por_uma_mais_secreta_em_producao"
-
+init_db_custom()
 # -------------------------
 # Auth Routes
 # -------------------------
@@ -1610,7 +1610,8 @@ def exportar_fechamentos_excel():
 # Start
 # -------------------------
 if __name__ == "__main__":
-    init_db_custom()
+    
     #app.run(debug=True, host="0.0.0.0")
     serve(app, host="0.0.0.0", port=5000)  # import serve from waitress
+
 
