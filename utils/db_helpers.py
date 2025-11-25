@@ -3,7 +3,10 @@ import os
 from werkzeug.security import generate_password_hash
 
 # 📌 Caminho seguro e persistente no Render
-DB_DIR = "/data"
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # utils/
+ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # raiz do projeto
+
+DB_DIR = os.path.join(ROOT_DIR, "instance")
 os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, "banco.db")
@@ -219,3 +222,4 @@ def set_setting(key, value):
     """, (key, value))
     conn.commit()
     conn.close()
+
