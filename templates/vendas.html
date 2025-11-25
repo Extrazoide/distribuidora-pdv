@@ -1,0 +1,729 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* ====== Ajustes visuais compactos ====== */
+  :root {
+    --pdv-primary:#0d6efd;
+    --pdv-ok:#198754;
+    --pdv-warn:#ffc107;
+    --pdv-danger:#dc3545;
+    --pdv-muted:#6c757d;
+  }
+  .form-control,.form-select{ padding:.35rem .5rem; height:2.1rem; font-size:.95rem; }
+  label,.table th,.table td{ font-size:.95rem; }
+  h3{ font-size:1.15rem; }
+  .btn{ padding:.35rem .6rem; font-size:.95rem; }
+
+  /* Tabela */
+  #pedidos-tbody td{ vertical-align: middle; }
+
+  /* Autocomplete flutuante */
+  #autocomplete-list{
+    z-index:1055; max-height:240px; overflow:auto;
+    box-shadow:0 6px 18px rgba(0,0,0,.12);
+  }
+
+  /* Destaques de totais */
+  .kpi{
+    background:#f8f9fa; border:1px solid #e9ecef; border-radius:.5rem; padding:.6rem .8rem;
+    display:flex; gap:.75rem; justify-content:flex-end; align-items:center; flex-wrap:wrap;
+  }
+  .kpi .tag{
+    min-width: 170px;
+    background:white; border:1px solid #e9ecef; border-radius:.4rem; padding:.35rem .6rem; font-weight:600;
+    display:flex; justify-content:space-between; gap:.75rem;
+  }
+  .tag .v{ font-variant-numeric: tabular-nums; }
+
+  /* Seção caixa */
+  #secao-caixa .forma-item .valor-forma{ max-width: 140px; }
+  #secao-caixa .forma-item .form-select{ max-width: 210px; }
+
+  /* Rodapé PDV fixo */
+  .pdv-footer{
+    position:fixed; left:0; right:0; bottom:0; background:#f8f9fa; border-top:1px solid #dee2e6;
+    z-index: 1040;
+  }
+  .pdv-footer .container{
+    display:flex; gap:.5rem; justify-content:space-between; align-items:center; padding:.5rem .75rem;
+  }
+  .pdv-footer .keys{ display:flex; gap:.5rem; flex-wrap:wrap; }
+  .pdv-footer .kbtn{
+    border:1px solid #dee2e6; background:white; border-radius:.5rem; padding:.35rem .6rem; cursor:pointer;
+  }
+  .pdv-footer .hint{ color:var(--pdv-muted); font-size:.9rem; }
+
+  /* Espaço para o footer não cobrir conteúdo */
+  .pdv-spacer{ height: 64px; }
+</style>
+
+<h3 class="mb-3"><i class="bi bi-currency-dollar"></i> Vendas</h3>
+
+<!-- Leitor por código de barras -->
+<div class="row g-3 mb-2">
+  <div class="col-md-4">
+    <input type="text" id="codigo-barras" class="form-control" placeholder="📷 Ler Código de Barras" autofocus>
+  </div>
+</div>
+
+<!-- Adicionar produto manualmente -->
+<div class="row g-3 mb-3">
+  <div class="col-md-6 position-relative">
+    <input type="text" id="codigo_ou_nome" class="form-control" placeholder="Código ou Nome do Produto (F10)" autocomplete="off">
+    <ul id="autocomplete-list" class="list-group position-absolute w-100"></ul>
+  </div>
+  <div class="col-md-2">
+    <input type="number" id="quantidade" class="form-control" value="1" min="1">
+  </div>
+  <div class="col-md-2">
+    <button id="btn-add-produto" class="btn btn-success w-100">
+      <i class="bi bi-plus-circle"></i> Adicionar (F2)
+    </button>
+  </div>
+  <div class="col-md-2 text-end">
+    <button id="btn-reabrir-venda" class="btn btn-warning w-100">
+      <i class="bi bi-arrow-counterclockwise"></i> Reabrir Selecionada
+    </button>
+  </div>
+</div>
+
+<!-- Tabela de itens -->
+<table class="table table-bordered table-hover shadow-sm mt-2 bg-white">
+  <thead class="table-secondary">
+    <tr>
+      <th>Produto</th>
+      <th style="width:70px;">Qtd</th>
+      <th style="width:120px;">Preço Unit.</th>
+      <th style="width:120px;">Total</th>
+      <th style="width:120px;">Ações</th>
+    </tr>
+  </thead>
+  <tbody id="pedidos-tbody">
+    {% for ped in pedidos %}
+    <tr id="pedido-{{ ped.id }}">
+      <td>{{ ped.nome }}</td>
+      <td class="text-center">{{ ped.quantidade }}</td>
+      <td>R$ {{ "%.2f"|format(ped.preco) }}</td>
+      <td>R$ {{ "%.2f"|format(ped.total) }}</td>
+      <td class="text-center">
+        <button class="btn btn-danger btn-sm remover" data-id="{{ ped.id }}">
+          <i class="bi bi-trash"></i> Remover
+        </button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr class="table-primary">
+      <th colspan="3" class="text-end">Total Geral</th>
+      <th colspan="2" id="total-geral">R$ {{ "%.2f"|format(total_geral) }}</th>
+    </tr>
+  </tfoot>
+</table>
+
+<div class="d-flex justify-content-end">
+  <button class="btn btn-primary mt-2" id="btn-finalizar">
+    <i class="bi bi-check-circle"></i> Finalizar Venda (F4)
+  </button>
+</div>
+
+<!-- Seção de Caixa (pagamentos múltiplos) -->
+<div id="secao-caixa" class="card shadow p-3 mt-3 bg-white" style="display:none;">
+  <h5 class="mb-3"><i class="bi bi-wallet2"></i> Caixa</h5>
+
+  <div class="kpi mb-3">
+    <div class="tag"><span>Total:</span> <span class="v" id="kpi-total">R$ 0,00</span></div>
+    <div class="tag"><span>Desconto:</span> <span class="v" id="kpi-desc">R$ 0,00</span></div>
+    <div class="tag"><span>Total Final:</span> <span class="v" id="kpi-final">R$ 0,00</span></div>
+    <div class="tag"><span>Recebido:</span> <span class="v" id="kpi-receb">R$ 0,00</span></div>
+    <div class="tag"><span>Faltam:</span> <span class="v" id="kpi-faltam">R$ 0,00</span></div>
+    <div class="tag"><span>Troco:</span> <span class="v" id="kpi-troco">R$ 0,00</span></div>
+  </div>
+
+  <div class="row g-3 mb-2">
+    <div class="col-md-3">
+      <label class="form-label">Desconto (R$)</label>
+      <input type="number" id="valor-desconto" class="form-control" min="0" step="0.01" value="0">
+    </div>
+  </div>
+
+  <!-- Pagamentos -->
+  <div class="mb-2">
+    <label class="form-label">Formas de Pagamento</label>
+    <div id="formas-container">
+      <div class="input-group mb-2 forma-item">
+        <select class="form-select forma-pagamento">
+          <option>Dinheiro [F3]</option>
+          <option>Cartão de Crédito [F5]</option>
+          <option>Cartão de Débito [F6]</option>
+          <option>PIX [F7]</option>
+          <option>Outros [F8]</option>
+        </select>
+        <input type="number" class="form-control valor-forma" min="0" step="0.01" placeholder="Valor (R$)">
+        <button class="btn btn-outline-danger remover-forma" type="button" title="Remover">
+          <i class="bi bi-x"></i>
+        </button>
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <button id="add-forma" class="btn btn-outline-primary btn-sm" type="button">
+        <i class="bi bi-plus-circle"></i> Adicionar forma (F2)
+      </button>
+      <button id="btn-maximo-restante" class="btn btn-outline-secondary btn-sm" type="button" title="Preenche o restante automaticamente no campo focado">
+        Preencher Restante (F1)
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-3 offset-md-9">
+      <label class="form-label">Total Final (R$)</label>
+      <input type="text" id="valor-final" class="form-control bg-light fw-bold" readonly>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-2">
+    <div class="col-md-3 offset-md-6">
+      <label class="form-label">Total Recebido (R$)</label>
+      <input type="text" id="valor-recebido-total" class="form-control bg-light fw-bold" readonly>
+    </div>
+    <div class="col-md-3">
+      <label class="form-label">Troco (R$)</label>
+      <input type="text" id="valor-troco" class="form-control bg-light fw-bold" readonly>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end mt-3">
+    <button class="btn btn-secondary me-2" id="btn-cancelar-caixa">
+      <i class="bi bi-x-circle"></i> Cancelar (ESC)
+    </button>
+    <button class="btn btn-success" id="btn-confirmar-caixa">
+      <i class="bi bi-cash-stack"></i> Confirmar (Enter)
+    </button>
+  </div>
+</div>
+
+<!-- Histórico -->
+<hr class="my-4">
+<h5><i class="bi bi-clock-history"></i> Últimas Vendas</h5>
+<table class="table table-sm table-striped shadow-sm bg-white">
+  <thead class="table-primary">
+    <tr>
+      <th>Data/Hora</th>
+      <th>Total</th>
+      <th>Desconto</th>
+      <th>Recebido</th>
+      <th>Troco</th>
+      <th>Forma</th>
+      <th>Operador</th>
+    </tr>
+  </thead>
+  <tbody id="historico-vendas">
+    {% for h in historico %}
+    <tr data-id="{{ h.id }}" class="linha-venda">
+      <td>{{ h.data_hora }}</td>
+      <td>R$ {{ "%.2f"|format(h.total or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(h.desconto or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(h.recebido or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(h.troco or 0) }}</td>
+      <td>{{ h.forma_pagamento }}</td>
+      <td>{{ h.usuario or "-" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-center text-muted">Nenhuma venda encontrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<!-- Modal Senha Admin -->
+<div class="modal fade" id="modalSenhaAdmin" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header bg-warning">
+      <h5 class="modal-title"><i class="bi bi-shield-lock"></i> Confirmação de Administrador</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body">
+      <label class="form-label">Digite a senha do administrador para continuar:</label>
+      <input type="password" id="senha-admin" class="form-control" placeholder="Senha do administrador" autofocus>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+      <button class="btn btn-warning" id="btn-confirmar-senha">
+        <i class="bi bi-unlock"></i> Confirmar
+      </button>
+    </div>
+  </div></div>
+</div>
+
+<!-- Spacer para o rodapé fixo -->
+<div class="pdv-spacer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ========= Refs ========= */
+const inputCodigo = document.getElementById('codigo-barras');
+const inputManual = document.getElementById('codigo_ou_nome');
+const list = document.getElementById('autocomplete-list');
+const btnAdd = document.getElementById('btn-add-produto');
+const quantidadeInput = document.getElementById('quantidade');
+const totalGeralEl = document.getElementById('total-geral');
+const secaoCaixa = document.getElementById('secao-caixa');
+const btnFinalizar = document.getElementById('btn-finalizar');
+
+const kpiTotal = document.getElementById('kpi-total');
+const kpiDesc = document.getElementById('kpi-desc');
+const kpiFinal = document.getElementById('kpi-final');
+const kpiReceb = document.getElementById('kpi-receb');
+const kpiFaltam = document.getElementById('kpi-faltam');
+const kpiTroco = document.getElementById('kpi-troco');
+
+const containerFormas = document.getElementById("formas-container");
+const btnAddForma = document.getElementById("add-forma");
+const btnMaximoRestante = document.getElementById("btn-maximo-restante");
+const inputDesconto = document.getElementById('valor-desconto');
+
+/* ========= Helpers ========= */
+const money = (v) => `R$ ${Number(v||0).toFixed(2)}`;
+const parseBRL = (txt) => parseFloat(String(txt).replace("R$","").replace(",",".").trim())||0;
+
+function getTotais() {
+  const total = parseFloat(totalGeralEl.textContent.replace("R$","").replace(",",".")) || 0;
+  const desconto = parseFloat(inputDesconto?.value || 0) || 0;
+  const totalFinal = Math.max(total - desconto, 0);
+  const pagamentos = leituraPagamentos();
+  const recebido = pagamentos.reduce((s,p)=>s+(p.valor||0), 0);
+  const faltam = Math.max(totalFinal - recebido, 0);
+  const troco = Math.max(recebido - totalFinal, 0);
+  return { total, desconto, totalFinal, recebido, faltam, troco, pagamentos };
+}
+
+function atualizarKpis(campos = getTotais()){
+  kpiTotal.textContent  = money(campos.total);
+  kpiDesc.textContent   = money(campos.desconto);
+  kpiFinal.textContent  = money(campos.totalFinal);
+  kpiReceb.textContent  = money(campos.recebido);
+  kpiFaltam.textContent = money(campos.faltam);
+  kpiTroco.textContent  = money(campos.troco);
+
+  document.getElementById('valor-final').value = campos.totalFinal.toFixed(2);
+  document.getElementById('valor-recebido-total').value = campos.recebido.toFixed(2);
+  document.getElementById('valor-troco').value = campos.troco.toFixed(2);
+}
+
+function leituraPagamentos(){
+  const arr = [];
+  containerFormas.querySelectorAll(".forma-item").forEach(item=>{
+    const forma = item.querySelector(".forma-pagamento")?.value;
+    const valor = parseFloat(item.querySelector(".valor-forma")?.value) || 0;
+    if (valor > 0 || forma) arr.push({ forma_pagamento: forma, valor });
+  });
+  return arr;
+}
+
+function focarProximoValor(){
+  const campos = [...containerFormas.querySelectorAll(".valor-forma")];
+  const vazio = campos.find(i => (parseFloat(i.value) || 0) <= 0);
+  (vazio || campos[campos.length-1])?.focus();
+}
+
+/* ========= Código de barras ========= */
+inputCodigo?.addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+
+  const codigo = inputCodigo.value.trim();
+  if (!codigo) return;
+
+  const quantidade = parseInt(quantidadeInput.value || "1", 10);
+  inputCodigo.disabled = true;
+
+  const res = await fetch("/ajax_add_produto", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ nome: codigo, quantidade })
+  });
+  const data = await res.json();
+
+  inputCodigo.value = "";
+  inputCodigo.disabled = false;
+
+  if (data.status === "ok") location.reload();
+  else alert(data.msg || "Produto não encontrado ou estoque insuficiente.");
+});
+
+/* ========= Autocomplete ========= */
+let selectedIndex = -1;
+let produtosCache = [];
+let selectedProductId = null;
+
+inputManual.addEventListener('input', async () => {
+  const q = inputManual.value.trim();
+  list.innerHTML = '';
+  produtosCache = [];
+  selectedIndex = -1;
+  selectedProductId = null;
+  if (!q) return;
+
+  const res = await fetch(`/autocomplete_produto?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  produtosCache = data;
+  if (!data.length) return;
+
+  list.innerHTML = '';
+  data.forEach((item, i) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item list-group-item-action';
+    li.dataset.id = item.id;
+    li.textContent = `${item.nome} (R$ ${item.preco.toFixed(2)} | Estoque: ${item.estoque})`;
+    li.onclick = () => {
+      inputManual.value = item.nome;
+      selectedProductId = item.id;
+      list.innerHTML = '';
+      selectedIndex = -1;
+    };
+    list.appendChild(li);
+  });
+
+  selectedIndex = 0;
+  selectedProductId = data[0].id;
+  list.children[selectedIndex]?.classList.add('active');
+});
+
+inputManual.addEventListener('keydown', e => {
+  const items = list.querySelectorAll('.list-group-item');
+  if (!items.length) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (selectedIndex < items.length - 1) selectedIndex++;
+    selectedProductId = produtosCache[selectedIndex]?.id || null;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (selectedIndex > 0) selectedIndex--;
+    selectedProductId = produtosCache[selectedIndex]?.id || null;
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const item = items[selectedIndex];
+    if (item) {
+      inputManual.value = item.textContent.split(' (')[0];
+      selectedProductId = parseInt(item.dataset.id, 10);
+      list.innerHTML = '';
+      selectedIndex = -1;
+    }
+  }
+  items.forEach((el, idx) => el.classList.toggle('active', idx === selectedIndex));
+});
+
+document.addEventListener('click', e => {
+  if (!list.contains(e.target) && e.target !== inputManual) {
+    list.innerHTML = '';
+    selectedIndex = -1;
+  }
+});
+
+/* ========= Adicionar produto ========= */
+btnAdd.addEventListener('click', async e => {
+  e.preventDefault();
+  const quantidade = parseInt(quantidadeInput.value || "1", 10);
+
+  if (selectedProductId) {
+    const res = await fetch("/ajax_add_produto_id", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ produto_id: selectedProductId, quantidade })
+    });
+    const data = await res.json();
+    if (data.status === "ok") location.reload();
+    else alert(data.msg);
+    return;
+  }
+
+  const nome = inputManual.value.trim();
+  if (!nome || quantidade < 1) return alert("Informe produto e quantidade.");
+
+  const res = await fetch("/ajax_add_produto", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ nome, quantidade })
+  });
+  const data = await res.json();
+  if (data.status === "ok") location.reload();
+  else alert(data.msg);
+});
+
+/* ========= Remover item ========= */
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".remover");
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (!confirm("Deseja realmente cancelar este item?")) return;
+  const resp = await fetch(`/ajax_cancelar_item/${id}`, { method: "POST" });
+  const data = await resp.json();
+  alert(data.msg || "Operação concluída.");
+  if (data.status === "ok") location.reload();
+});
+
+/* ========= Abrir/fechar caixa ========= */
+btnFinalizar.addEventListener('click', () => {
+  secaoCaixa.style.display = "block";
+  btnFinalizar.style.display = "none";
+  inputDesconto.value = (parseFloat(inputDesconto.value)||0).toFixed(2);
+  atualizarKpis();
+  // foca primeiro valor
+  containerFormas.querySelector(".valor-forma")?.focus();
+});
+
+document.getElementById('btn-cancelar-caixa').addEventListener('click', () => {
+  // Esconde a seção do caixa e volta o botão de finalizar
+  secaoCaixa.style.display = "none";
+  btnFinalizar.style.display = "block";
+
+  // Rola suavemente para o topo
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Foca novamente no campo de código de barras após a animação
+  setTimeout(() => {
+    const inputCodigo = document.getElementById("codigo-barras");
+    if (inputCodigo) inputCodigo.focus();
+  }, 600);
+});
+
+/* ========= Pagamentos múltiplos ========= */
+if (btnAddForma) {
+  btnAddForma.addEventListener("click", () => {
+    const base = containerFormas.querySelector(".forma-item");
+    const clone = base.cloneNode(true);
+    clone.querySelector(".valor-forma").value = "";
+    containerFormas.appendChild(clone);
+    clone.querySelector(".valor-forma").focus();
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".remover-forma")) {
+    const item = e.target.closest(".forma-item");
+    const items = containerFormas.querySelectorAll(".forma-item");
+    if (items.length > 1) item.remove();
+    atualizarKpis();
+  }
+});
+
+btnMaximoRestante?.addEventListener("click", ()=>{
+  const { faltam } = getTotais();
+  const alvo = document.activeElement?.classList.contains("valor-forma")
+              ? document.activeElement
+              : containerFormas.querySelector(".forma-item:last-child .valor-forma");
+  if (!alvo) return;
+  const atual = parseFloat(alvo.value)||0;
+  alvo.value = (atual + faltam).toFixed(2);
+  atualizarKpis();
+  focarProximoValor();
+});
+
+/* Atualizações em tempo real */
+document.addEventListener("input", (e)=>{
+  if (e.target.id === "valor-desconto" || e.target.classList.contains("valor-forma")) {
+    atualizarKpis();
+  }
+});
+
+/* ========= Confirmar fechamento ========= */
+document.getElementById('btn-confirmar-caixa')?.addEventListener('click', async () => {
+  const {desconto,totalFinal,recebido,faltam,troco,pagamentos} = getTotais();
+
+  if (faltam > 0.009) {
+    alert(`⚠️ Falta receber R$ ${faltam.toFixed(2)} para fechar.`);
+    focarProximoValor();
+    return;
+  }
+
+  const formaPrincipal = (pagamentos.length === 1) ? pagamentos[0].forma_pagamento : "Múltipla";
+
+  const res = await fetch('/ajax_fechar_venda', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      desconto,
+      total_final: totalFinal,
+      pagamentos,
+      total_recebido: recebido,
+      troco,
+      forma_principal: formaPrincipal
+    })
+  });
+  const data = await res.json();
+  alert(data.msg || "Venda finalizada.");
+  if (data.status === "ok") {
+  // Rola suavemente para o topo
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Aguarda 800ms (tempo de reload visual) e foca no campo de código de barras
+  setTimeout(() => {
+    const inputCodigo = document.getElementById("codigo-barras");
+    if (inputCodigo) inputCodigo.focus();
+  }, 800);
+
+  // Atualiza a página após 1s (para dar tempo da animação terminar)
+  setTimeout(() => location.reload(), 1000);
+}
+
+});
+
+/* ========= Reabrir venda (admin) ========= */
+let vendaSelecionadaId = null;
+document.querySelectorAll("#historico-vendas tr[data-id]").forEach(tr => {
+  tr.addEventListener("click", () => {
+    document.querySelectorAll("#historico-vendas tr").forEach(t => t.classList.remove("table-warning"));
+    tr.classList.add("table-warning");
+    vendaSelecionadaId = tr.dataset.id;
+  });
+});
+
+document.getElementById("btn-reabrir-venda")?.addEventListener("click", async () => {
+  if (!vendaSelecionadaId) return alert("Selecione uma venda para reabrir.");
+  const modalSenha = new bootstrap.Modal(document.getElementById("modalSenhaAdmin"));
+  modalSenha.show();
+  const inputSenha = document.getElementById("senha-admin");
+  inputSenha.value = ""; inputSenha.focus();
+
+  document.getElementById("btn-confirmar-senha").onclick = async () => {
+    const senha = inputSenha.value.trim();
+    if (!senha) return alert("Digite a senha do administrador.");
+    const resp = await fetch("/ajax_verificar_admin", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ senha })
+    });
+    const data = await resp.json();
+    if (data.status !== "ok") return alert("❌ Senha incorreta!");
+
+    modalSenha.hide();
+    if (!confirm("⚠️ Deseja realmente reabrir esta venda?")) return;
+
+    const resp2 = await fetch(`/ajax_reabrir_venda/${vendaSelecionadaId}`, { method: "POST" });
+    const data2 = await resp2.json();
+    alert(data2.msg);
+    if (data2.status === "ok") location.reload();
+  };
+});
+
+/* ========= Atalhos de PDV ========= */
+document.addEventListener("keydown", e => {
+  const ativo = document.activeElement;
+  const ehCaixaAberto = secaoCaixa.style.display === "block";
+
+  // === F2: adicionar produto ou nova forma ===
+  if (e.key === "F2") {
+    e.preventDefault();
+    if (ehCaixaAberto) btnAddForma?.click();
+    else btnAdd.click();
+  }
+
+  // === F4: abrir caixa ===
+  if (e.key === "F4") {
+    e.preventDefault();
+    if (!ehCaixaAberto) btnFinalizar.click();
+  }
+
+  // === ENTER: confirmar fechamento ===
+  if (e.key === "Enter" && ehCaixaAberto) {
+    e.preventDefault();
+    document.getElementById("btn-confirmar-caixa")?.click();
+  }
+
+  // === ESC: cancelar caixa ===
+  if (e.key === "Escape" && ehCaixaAberto) {
+    e.preventDefault();
+    document.getElementById("btn-cancelar-caixa")?.click();
+  }
+
+  // === F9: limpar pagamentos ===
+  if (e.key === "F9" && ehCaixaAberto) {
+    e.preventDefault();
+    containerFormas.innerHTML = `
+      <div class="input-group mb-2 forma-item">
+        <select class="form-select forma-pagamento">
+          <option>Dinheiro [F3]</option>
+          <option>Cartão de Crédito [F5]</option>
+          <option>Cartão de Débito [F6]</option>
+          <option>PIX [F7]</option>
+          <option>Outros [F8]</option>
+        </select>
+        <input type="number" class="form-control valor-forma" min="0" step="0.01" placeholder="Valor (R$)">
+        <button class="btn btn-outline-danger remover-forma" type="button"><i class="bi bi-x"></i></button>
+      </div>`;
+    containerFormas.querySelector(".valor-forma")?.focus();
+  }
+
+  // === F3–F8: selecionar dentro do select ativo ===
+  const mapAtalhos = {
+    F3: "Dinheiro",
+    F5: "Cartão de Crédito",
+    F6: "Cartão de Débito",
+    F7: "PIX",
+    F8: "Outros"
+  };
+
+  if (ehCaixaAberto && mapAtalhos[e.key]) {
+    e.preventDefault();
+
+    // se o foco estiver em um select .forma-pagamento
+    if (ativo && ativo.classList.contains("forma-pagamento")) {
+      const valor = mapAtalhos[e.key];
+      const opcoes = [...ativo.options];
+      const match = opcoes.find(o => o.textContent.startsWith(valor));
+      if (match) ativo.value = match.textContent;
+    } else {
+      // se não estiver no select, aplica no último select existente
+      const ultSelect = containerFormas.querySelector(".forma-item:last-child .forma-pagamento");
+      if (ultSelect) {
+        const valor = mapAtalhos[e.key];
+        const opcoes = [...ultSelect.options];
+        const match = opcoes.find(o => o.textContent.startsWith(valor));
+        if (match) ultSelect.value = match.textContent;
+        ultSelect.focus();
+      }
+    }
+  }
+
+  // === 🧮 F1: preencher restante ===
+  if (e.key === "F1" && ehCaixaAberto) {
+    e.preventDefault();
+    const totalVenda = parseFloat(document.getElementById('valor-final')?.value) || 0;
+
+    // soma atual dos pagamentos
+    let soma = 0;
+    document.querySelectorAll(".valor-forma").forEach(inp => {
+      soma += parseFloat(inp.value) || 0;
+    });
+
+    const restante = Math.max(totalVenda - soma, 0).toFixed(2);
+    const ultimo = containerFormas.querySelector(".forma-item:last-child .valor-forma");
+    if (ultimo) {
+      ultimo.value = restante;
+      ultimo.focus();
+      // opcional: destaca o campo
+      ultimo.style.backgroundColor = "#e8f8e8";
+      setTimeout(() => ultimo.style.backgroundColor = "", 800);
+    }
+
+    // atualiza totais na tela
+    document.getElementById('valor-recebido-total').value = (soma + parseFloat(restante)).toFixed(2);
+    const troco = Math.max((soma + parseFloat(restante)) - totalVenda, 0);
+    document.getElementById('valor-troco').value = troco.toFixed(2);
+  }
+    // === 🛒 F10: focar campo de produto (Código ou Nome) ===
+  if (e.key === "F10") {
+    e.preventDefault();
+    const campoProduto = document.getElementById("codigo_ou_nome");
+    if (campoProduto) {
+      campoProduto.focus();
+      campoProduto.select(); // já seleciona o texto
+    }
+  }
+});
+
+/* ========= Inicializa KPI na primeira carga do caixa (se já visível) ========= */
+if (secaoCaixa.style.display === "block") atualizarKpis();
+</script>
+{% endblock %}

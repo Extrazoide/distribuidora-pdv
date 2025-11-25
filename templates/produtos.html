@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if session.get('role') == 'admin' %}
+  <!-- 🔹 ADMIN: Tela completa de gerenciamento -->
+  <h3 class="mb-3"><i class="bi bi-box-seam"></i> Produtos</h3>
+
+  <!-- 🔹 Botões e busca -->
+  <div class="d-flex flex-wrap mb-3 gap-2 align-items-center">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalAddProduto">
+      <i class="bi bi-plus-circle"></i> Novo Produto
+    </button>
+
+    <form id="form-import" action="/produtos/importar" method="post" enctype="multipart/form-data" class="d-flex align-items-center">
+      <input type="file" name="file" accept=".csv" class="form-control form-control-sm me-2" required>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-upload"></i> Importar CSV
+      </button>
+    </form>
+
+    <a href="/produtos/exportar" class="btn btn-sm btn-success">
+      <i class="bi bi-download"></i> Exportar CSV
+    </a>
+
+    <button type="button" class="btn btn-sm btn-secondary" onclick="baixarModeloCSV()">
+      <i class="bi bi-file-earmark-text"></i> Baixar Modelo CSV
+    </button>
+
+    <!-- 🔍 Campo de busca -->
+    <div class="ms-auto">
+      <input type="text" id="campo-busca" class="form-control form-control-sm"
+            placeholder="🔍 Buscar por nome ou código..." style="min-width:250px;">
+    </div>
+  </div>
+
+  <!-- 🔹 Tabela -->
+  <table class="table table-hover table-striped shadow-sm bg-white" id="tabela-produtos">
+    <thead class="table-primary">
+      <tr>
+        <th>Código</th>
+        <th>Nome</th>
+        <th>Preço</th>
+        <th>Estoque</th>
+        <th>Categoria</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="produtos-tbody">
+      <tr><td colspan="5" class="text-center text-muted">Carregando produtos...</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 🔹 Modal Cadastrar / Editar -->
+  <div class="modal fade" id="modalAddProduto" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <form class="modal-content" id="form-produto">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalTitle">Novo Produto</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="produto-id">
+          <div class="mb-3">
+            <label class="form-label">Código de Barras</label>
+            <input type="text" id="produto-codigo" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Nome</label>
+            <input type="text" id="produto-nome" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Categorias</label>
+            <select id="produto-categoria" class="form-control" required>
+              <option value="">Selecione...</option>
+              <option value="Tabacaria">Tabacaria</option>
+              <option value="Bebidas">Bebidas</option>
+              <option value="Cervejas">Cervejas</option>
+              <option value="Energeticos">Energeticos</option>
+              <option value="Refrigerantes">Refrigerantes</option>
+              <option value="Sucos">Sucos</option>
+              <option value="Gelos">Gelos</option>
+              <option value="Soverteria">Soverteria</option>
+              <option value="Destilados">Destilados</option>
+              <option value="Petiscos">Petiscos</option>
+              <option value="Outros">Outros</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Preço</label>
+            <input type="number" id="produto-preco" class="form-control" step="0.01" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Estoque</label>
+            <input type="number" id="produto-estoque" class="form-control" min="0" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-primary" id="btn-save">Salvar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+{% else %}
+  <!-- 🔒 ATENDENTE: Modo leitura -->
+  <h3 class="mb-3"><i class="bi bi-box-seam"></i> Produtos</h3>
+  <div class="alert alert-warning shadow-sm">
+    <i class="bi bi-lock-fill"></i> Acesso restrito — você está no modo <strong>somente leitura</strong>.
+  </div>
+
+  <!-- 🔹 Busca -->
+  <div class="mb-3 d-flex justify-content-end">
+    <input type="text" id="campo-busca" class="form-control form-control-sm" placeholder="🔍 Buscar produto..." style="max-width:300px;">
+  </div>
+
+  <!-- 🔹 Tabela -->
+  <table class="table table-hover table-striped shadow-sm bg-white" id="tabela-produtos">
+    <thead class="table-primary">
+      <tr>
+        <th>Código</th>
+        <th>Nome</th>
+        <th>Preço</th>
+        <th>Estoque</th>
+      </tr>
+    </thead>
+    <tbody id="produtos-tbody">
+      <tr><td colspan="4" class="text-center text-muted">Carregando produtos...</td></tr>
+    </tbody>
+  </table>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// =============================
+// 🔎 BUSCA DE PRODUTOS (ADMIN e ATENDENTE)
+// =============================
+let timer = null;
+document.getElementById("campo-busca").addEventListener("input", function() {
+  clearTimeout(timer);
+  const termo = this.value.trim();
+  timer = setTimeout(() => buscarProdutos(termo), 300);
+});
+
+async function buscarProdutos(termo = "") {
+  const res = await fetch(`/ajax_buscar_produtos?q=${encodeURIComponent(termo)}`);
+  const produtos = await res.json();
+  const tbody = document.getElementById("produtos-tbody");
+  tbody.innerHTML = "";
+
+  if (!produtos.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">Nenhum produto encontrado.</td></tr>`;
+    return;
+  }
+
+  produtos.forEach(p => {
+    tbody.innerHTML += `
+      <tr id="produto-${p.id}">
+        <td>${p.codigo_barra}</td>
+        <td>${p.nome}</td>
+        <td>R$ ${p.preco.toFixed(2).replace('.', ',')}</td>
+        <td>${p.estoque}</td>
+        <td>${p.categoria || "—"}</td>
+        {% if session.get('role') == 'admin' %}
+          <td>
+            <button class="btn btn-warning btn-sm" onclick="editarProduto(${p.id}, '${p.codigo_barra}', '${p.nome.replace(/'/g,"\\'")}', ${p.preco}, ${p.estoque})">
+              <i class="bi bi-pencil-square"></i>
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="desativarProduto(${p.id})">
+              <i class="bi bi-power"></i>
+            </button>
+          </td>
+        {% endif %}
+      </tr>`;
+  });
+}
+
+// =============================
+// ✏️ EDITAR PRODUTO
+// =============================
+function editarProduto(id, codigo, nome, preco, estoque) {
+  document.getElementById('produto-id').value = id;
+  document.getElementById('produto-codigo').value = codigo;
+  document.getElementById('produto-nome').value = nome;
+  document.getElementById('produto-preco').value = preco;
+  document.getElementById('produto-estoque').value = estoque;
+  document.getElementById('modalTitle').textContent = "Editar Produto";
+  new bootstrap.Modal(document.getElementById('modalAddProduto')).show();
+}
+
+// =============================
+// 💾 SALVAR PRODUTO (ADD / EDITAR)
+// =============================
+document.getElementById('form-produto')?.addEventListener('submit', async function(e){
+  e.preventDefault();
+
+  const id = document.getElementById('produto-id').value;
+  const codigo = document.getElementById('produto-codigo').value.trim();
+  const categoria = document.getElementById("produto-categoria").value;
+  const nome = document.getElementById('produto-nome').value.trim();
+  const preco = parseFloat(document.getElementById('produto-preco').value);
+  const estoque = parseInt(document.getElementById('produto-estoque').value);
+
+  if (!nome || preco < 0) {
+    alert("Preencha os campos corretamente!");
+    return;
+  }
+
+  const url = id ? `/ajax_editar_produto/${id}` : "/ajax_add_produto_produtos";
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({codigo, nome, preco, estoque, categoria })
+  });
+
+  const text = await res.text();
+  let data;
+
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    alert("❌ Servidor retornou resposta inesperada:\n" + text);
+    return;
+  }
+
+  alert(data.msg || "Operação concluída!");
+
+  if (data.status === "ok") {
+    buscarProdutos(document.getElementById("campo-busca").value);
+    if (document.getElementById('modalAddProduto')) {
+      bootstrap.Modal.getInstance(document.getElementById('modalAddProduto'))?.hide();
+    }
+  }
+
+});
+
+// =============================
+// 🗑️ REMOVER PRODUTO
+// =============================
+// =============================
+// 🗑️ DESATIVAR PRODUTO (seguro)
+// =============================
+async function desativarProduto(id) {
+  if (!confirm("❗ Este produto será DESATIVADO.\nVocê poderá reativá-lo futuramente.\n\nDeseja continuar?")) return;
+
+  try {
+    const res = await fetch(`/ajax_desativar_produto/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+
+    const data = await res.json();
+    alert(data.msg);
+
+    if (data.status === "ok") {
+      buscarProdutos(document.getElementById("campo-busca").value);
+    }
+
+  } catch (err) {
+    alert("❌ Erro ao comunicar com o servidor.\n" + err);
+  }
+}
+
+
+
+// =============================
+// 📥 BAIXAR MODELO CSV
+// =============================
+function baixarModeloCSV() {
+  const csv = "codigo_barra,nome,preco,estoque\n1234567890123,Produto Exemplo,9.99,10";
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "modelo_produtos.csv";
+  link.click();
+}
+
+// =============================
+// 🚀 CARREGAR AO ABRIR
+// =============================
+buscarProdutos();
+</script>
+{% endblock %}
+

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+<h3><i class="bi bi-graph-up"></i> Relatório Financeiro</h3>
+
+<!-- 🔍 Filtros -->
+<form class="row g-3 mt-3 mb-4" method="get">
+  <div class="col-md-3">
+    <label class="form-label">Tipo de filtro</label>
+    <select class="form-select" name="filtro" onchange="this.form.submit()">
+      <option value="dia" {{ 'selected' if filtro == 'dia' else '' }}>Por Dia</option>
+      <option value="mes" {{ 'selected' if filtro == 'mes' else '' }}>Por Mês</option>
+      <option value="ano" {{ 'selected' if filtro == 'ano' else '' }}>Por Ano</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Valor</label>
+    {% if filtro == 'dia' %}
+      <input type="date" class="form-control" name="valor" value="{{ valor }}" onchange="this.form.submit()">
+    {% elif filtro == 'mes' %}
+      <input type="month" class="form-control" name="valor" value="{{ valor }}" onchange="this.form.submit()">
+    {% else %}
+      <input type="number" class="form-control" name="valor" value="{{ valor }}" min="2000" max="2100" onchange="this.form.submit()">
+    {% endif %}
+  </div>
+</form>
+
+<!-- 📤 Botão Exportar Excel -->
+<div class="mb-3 text-end">
+  <a href="{{ url_for('exportar_excel', filtro=filtro, valor=valor) }}" class="btn btn-success">
+    <i class="bi bi-file-earmark-excel"></i> Exportar para Excel
+  </a>
+</div>
+
+<!-- 🔹 Resumo -->
+<div class="card shadow-sm p-3 mb-4">
+  <h5>Resumo</h5>
+  <ul>
+    <li><strong>Quantidade de Vendas:</strong> {{ totais.qtd or 0 }}</li>
+    <li><strong>Total Bruto:</strong> R$ {{ "%.2f"|format(totais.soma_total or 0) }}</li>
+    <li><strong>Descontos:</strong> R$ {{ "%.2f"|format(totais.soma_desc or 0) }}</li>
+    <li><strong>Total Recebido:</strong> R$ {{ "%.2f"|format(totais.soma_recebido or 0) }}</li>
+    <li><strong>Troco:</strong> R$ {{ "%.2f"|format(totais.soma_troco or 0) }}</li>
+  </ul>
+</div>
+
+<!-- 📊 Gráficos -->
+<div class="row">
+  <div class="col-md-6">
+    <div class="card shadow-sm p-3">
+      <h6 class="text-center">Totais por Forma de Pagamento</h6>
+      <canvas id="graficoForma"></canvas>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card shadow-sm p-3">
+      <h6 class="text-center">Evolução de Vendas</h6>
+      <canvas id="graficoBarras"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- 📄 Movimentos -->
+<hr class="my-4">
+<h5 class="mt-4">Movimentos</h5>
+<table class="table table-hover table-bordered">
+  <thead class="table-primary">
+    <tr>
+      <th>Data/Hora</th>
+      <th>Total</th>
+      <th>Desconto</th>
+      <th>Recebido</th>
+      <th>Troco</th>
+      <th>Forma</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for d in dados %}
+    <tr>
+      <td>{{ d.data_hora }}</td>
+      <td>R$ {{ "%.2f"|format(d.total or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(d.desconto or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(d.recebido or 0) }}</td>
+      <td>R$ {{ "%.2f"|format(d.troco or 0) }}</td>
+      <td>{{ d.forma_pagamento or '-' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<!-- Importa Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  // Dados passados pelo backend
+  const formaLabels = {{ por_pagamento | map(attribute='forma_pagamento') | list | tojson }};
+  const formaValores = {{ por_pagamento | map(attribute='total') | list | tojson }};
+  const evolLabels = {{ dados | map(attribute='data_hora') | list | tojson }};
+  const evolValores = {{ dados | map(attribute='total') | list | tojson }};
+
+  // 🎯 Gráfico de Pizza - Formas de Pagamento
+  new Chart(document.getElementById('graficoForma'), {
+    type: 'pie',
+    data: {
+      labels: formaLabels,
+      datasets: [{
+        data: formaValores,
+        backgroundColor: ['#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#f44336']
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: 'bottom' },
+        title: { display: true, text: 'Distribuição por Forma de Pagamento' }
+      }
+    }
+  });
+
+  // 📈 Gráfico de Barras - Evolução das Vendas
+  new Chart(document.getElementById('graficoBarras'), {
+    type: 'bar',
+    data: {
+      labels: evolLabels,
+      datasets: [{
+        label: 'Vendas (R$)',
+        data: evolValores,
+        backgroundColor: '#2196f3'
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 8 } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+});
+</script>
+{% endblock %}

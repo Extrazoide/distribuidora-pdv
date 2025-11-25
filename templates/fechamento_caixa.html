@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-cash-coin"></i> Fechamento de Caixa</h3>
+<h6 class="text-muted mb-3">
+  Operador atual: <strong>{{ session.get('username', 'Desconhecido') }}</strong>
+</h6>
+
+{# 🕒 Último fechamento registrado #}
+{% if ultimo %}
+<div class="alert alert-info shadow-sm">
+  🕒 Último fechamento: {{ ultimo.data_hora }} por <strong>{{ ultimo.usuario }}</strong><br>
+  💰 <strong>R$ {{ "%.2f"|format(ultimo.total_liquido or 0) }}</strong>
+</div>
+{% endif %}
+
+<div class="card shadow-sm p-4 mb-4">
+  <h5>Resumo do Dia</h5>
+
+  <table class="table table-bordered text-center mt-2">
+    <tr><th>Total de Vendas</th><td>R$ {{ "%.2f"|format(dados.total_vendas or 0) }}</td></tr>
+    <tr><th>Descontos</th><td>R$ {{ "%.2f"|format(dados.total_descontos or 0) }}</td></tr>
+    <tr><th>Recebido</th><td>R$ {{ "%.2f"|format(dados.total_recebido or 0) }}</td></tr>
+    <tr><th>Troco</th><td>R$ {{ "%.2f"|format(dados.total_troco or 0) }}</td></tr>
+    <tr class="table-success"><th>Total Líquido</th>
+      <td><strong>R$ {{ "%.2f"|format((dados.total_recebido or 0) - (dados.total_troco or 0)) }}</strong></td>
+    </tr>
+  </table>
+
+  {# 💳 Resumo por forma de pagamento #}
+  <h6 class="mt-4"><i class="bi bi-wallet2"></i> Totais por Forma de Pagamento</h6>
+  <table class="table table-sm table-striped text-center">
+    <thead class="table-light"><tr><th>Forma</th><th>Vendas</th><th>Descontos</th><th>Líquido</th></tr></thead>
+    <tbody>
+      {% for f in por_pagamento %}
+      <tr>
+        <td>{{ f.forma_pagamento }}</td>
+        <td>R$ {{ "%.2f"|format(f.total_vendas or 0) }}</td>
+        <td>R$ {{ "%.2f"|format(f.total_descontos or 0) }}</td>
+        <td><strong>R$ {{ "%.2f"|format(f.total_liquido or 0) }}</strong></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="text-muted">Sem registros.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# 🔸 Campos adicionais #}
+  <div class="row g-3 mt-3">
+    <div class="col-md-3">
+      <label>🕓 Turno</label>
+      <select id="turno" class="form-select">
+        <option value="Manhã">Manhã</option>
+        <option value="Tarde">Tarde</option>
+        <option value="Noite">Noite</option>
+      </select>
+    </div>
+    <div class="col-md-3">
+      <label>💵 Valor Contado (R$)</label>
+      <input type="number" id="valor-contado" step="0.01" class="form-control" placeholder="Ex: 500.00">
+    </div>
+    <div class="col-md-6">
+      <label>💬 Observação</label>
+      <input type="text" id="obs-fechamento" class="form-control" placeholder="Ex: Fechamento turno da tarde">
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex gap-2">
+    <button class="btn btn-success flex-fill" id="btn-fechar">
+      <i class="bi bi-check2-circle"></i> Fechar Caixa
+    </button>
+    <a href="/exportar_fechamentos_excel" class="btn btn-outline-primary flex-fill">
+      <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+    </a>
+  </div>
+</div>
+
+{# 🧾 Histórico #}
+<h5><i class="bi bi-clock-history"></i> Histórico de Fechamentos</h5>
+
+<form method="get" class="mb-3">
+  <div class="input-group" style="max-width: 300px;">
+    <input type="date" name="data" value="{{ filtro_data }}" class="form-control">
+    <button class="btn btn-outline-secondary">Filtrar</button>
+  </div>
+</form>
+
+<table class="table table-striped shadow-sm">
+  <thead class="table-primary">
+    <tr>
+      <th>ID</th>
+      <th>Data/Hora</th>
+      <th>Usuário</th>
+      <th>Turno</th>
+      <th>Total Líquido</th>
+      <th>Observação</th>
+      <th>Ações</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in historico %}
+    <tr>
+      <td>{{ f.id }}</td>
+      <td>{{ f.data_hora }}</td>
+      <td>{{ f.usuario }}</td>
+      <td>{{ f.turno or "-" }}</td>
+      <td>R$ {{ "%.2f"|format(f.total_liquido or 0) }}</td>
+      <td>{{ f.observacao or "-" }}</td>
+      <td>
+        {% if session.get('role') == 'admin' %}
+          <button class="btn btn-sm btn-outline-danger" onclick="reabrirFechamento({{ f.id }})">
+            <i class="bi bi-unlock"></i> Reabrir
+          </button>
+        {% endif %}
+
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-center text-muted">Nenhum fechamento encontrado.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function reabrirFechamento(id){
+  if(!confirm("Deseja reabrir este fechamento?")) return;
+  const res = await fetch(`/ajax_reabrir_fechamento/${id}`, {method:"POST"});
+  const data = await res.json();
+  alert(data.msg);
+  if(data.status === "ok") location.reload();
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  const btnFechar = document.getElementById("btn-fechar");
+  if(!btnFechar){
+    console.error("❌ Botão 'Fechar Caixa' não encontrado.");
+    return;
+  }
+
+  btnFechar.addEventListener("click", async ()=>{
+    if(!confirm("Confirmar fechamento de caixa?")) return;
+
+    const obs = document.getElementById("obs-fechamento").value.trim();
+    const valor = parseFloat(document.getElementById("valor-contado").value || 0);
+    const turno = document.getElementById("turno").value;
+
+    // 🔸 Dados de formas de pagamento vindos do backend (Python)
+    const formasPag = {{ por_pagamento_json | safe }};
+    let totalEsperado = 0;
+    let resumoDetalhado = "";
+
+    formasPag.forEach(f => {
+      const nome = f.forma_pagamento || "Outros";
+      const liquido = parseFloat(f.total_liquido || 0);
+      totalEsperado += liquido;
+      resumoDetalhado += `${nome.padEnd(12)}: R$ ${liquido.toFixed(2)}\n`;
+    });
+
+    const esperado = totalEsperado;
+    const diff = valor - esperado;
+
+    // ⚠️ Mostra o resumo completo se houver diferença
+    if(valor && Math.abs(diff) > 0.01){
+      const msg = 
+`⚠️ Diferença detectada!
+───────────────────────
+${resumoDetalhado}
+───────────────────────
+💰 Total Esperado: R$ ${esperado.toFixed(2)}
+🧾 Valor Contado: R$ ${valor.toFixed(2)}
+📉 Diferença: R$ ${diff.toFixed(2)}
+
+Deseja continuar mesmo assim?`;
+      if(!confirm(msg)) return;
+    }
+
+    // 🔹 Envia fechamento ao backend
+    const res = await fetch("/ajax_fechar_caixa", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({observacao: obs, valor_contado: valor, turno})
+    });
+    const data = await res.json();
+    alert(data.msg);
+    if(data.status === "ok") location.reload();
+  });
+});
+</script>
+{% endblock %}

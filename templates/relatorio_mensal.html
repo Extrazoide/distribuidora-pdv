@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-calendar-event"></i> Relatório Mensal</h3>
+
+<form method="get" class="mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label">Selecione o Mês:</label>
+      <input type="month" name="mes" class="form-control" value="{{ mes }}">
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary"><i class="bi bi-search"></i> Gerar</button>
+    </div>
+  </div>
+</form>
+
+<div class="card shadow p-4 bg-white">
+  <h5 class="mb-3 text-primary"><i class="bi bi-bar-chart"></i> Resumo do Mês</h5>
+  <table class="table table-striped">
+    <tr><th>Total de Vendas</th><td>R$ {{ "%.2f"|format(dados.total_vendas or 0) }}</td></tr>
+    <tr><th>Descontos</th><td>R$ {{ "%.2f"|format(dados.total_desconto or 0) }}</td></tr>
+    <tr><th>Trocos</th><td>R$ {{ "%.2f"|format(dados.total_troco or 0) }}</td></tr>
+    <tr><th>Quantidade de Fechamentos</th><td>{{ dados.qtd_vendas or 0 }}</td></tr>
+  </table>
+</div>
+{% endblock %}

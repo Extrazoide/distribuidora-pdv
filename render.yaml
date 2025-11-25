@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: sistema-distribuidora
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --host=0.0.0.0 --port=$PORT bar_flask:app
+    envVars:
+      - key: SECRET_KEY
+        value: sua_chave_secreta_producao

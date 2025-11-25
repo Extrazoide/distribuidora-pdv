@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-gear"></i> Painel Administrativo</h3>
+
+<div class="row g-4">
+
+  <!-- Configurações de Comércio -->
+  <div class="col-md-6">
+    <div class="card shadow-lg border-0 p-4 h-100">
+      <h5 class="mb-3"><i class="bi bi-shop"></i> Nome do Comércio</h5>
+      <form method="POST" action="{{ url_for('admin_settings') }}" class="row g-2">
+        <div class="col-md-8">
+          <input type="text" name="commerce_name" class="form-control form-control-lg"
+                 value="{{ commerce }}" required>
+        </div>
+        <div class="col-md-4">
+          <button class="btn btn-primary btn-lg w-100">
+            <i class="bi bi-save"></i> Salvar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Gerenciamento de Usuários -->
+  <div class="col-md-6">
+    <div class="card shadow-lg border-0 p-4 h-100">
+      <h5 class="mb-3"><i class="bi bi-people"></i> Usuários do Sistema</h5>
+
+      <!-- Formulário de novo usuário -->
+      <form method="POST" action="{{ url_for('admin_add_user') }}" class="row g-2 align-items-center">
+        <div class="col-md-3">
+          <input type="text" name="username" class="form-control form-control-sm" placeholder="Usuário" required>
+        </div>
+        <div class="col-md-3">
+          <input type="password" name="password" class="form-control form-control-sm" placeholder="Senha" required>
+        </div>
+        <div class="col-md-3">
+          <select name="role" class="form-select form-select-sm">
+            <option value="attendant">Atendente</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-success btn-sm w-100">
+            <i class="bi bi-person-plus"></i> Adicionar
+          </button>
+        </div>
+      </form>
+
+      <!-- Tabela de usuários -->
+      <div class="table-responsive mt-3">
+        <table class="table table-hover align-middle shadow-sm bg-white rounded">
+          <thead class="table-primary">
+            <tr>
+              <th class="text-center">ID</th>
+              <th>Usuário</th>
+              <th>Função</th>
+              <th class="text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td class="text-center">{{ u.id }}</td>
+              <td>{{ u.username }}</td>
+              <td>
+                {% if u.role == "admin" %}
+                  <span class="badge bg-danger">Admin</span>
+                {% else %}
+                  <span class="badge bg-secondary">Atendente</span>
+                {% endif %}
+              </td>
+              <td class="text-center">
+                <!-- Botão alterar senha -->
+                <button class="btn btn-outline-warning btn-sm me-1"
+                        onclick="abrirModalSenha('{{ u.id }}', '{{ u.username }}')">
+                  <i class="bi bi-key"></i>
+                </button>
+
+                {% if u.id != session.get('user_id') %}
+                <form method="POST" action="{{ url_for('admin_delete_user', user_id=u.id) }}" style="display:inline;">
+                  <button class="btn btn-outline-danger btn-sm"
+                          onclick="return confirm('Excluir usuário {{ u.username }}?')">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+                {% else %}
+                <button class="btn btn-outline-secondary btn-sm" disabled
+                        title="Você não pode excluir seu próprio usuário.">
+                  <i class="bi bi-person-lock"></i>
+                </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <!-- Modal Alterar Senha -->
+      <div class="modal fade" id="modalAlterarSenha" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+          <form method="POST" action="{{ url_for('admin_change_password') }}" class="modal-content">
+            <div class="modal-header bg-warning bg-opacity-25">
+              <h5 class="modal-title"><i class="bi bi-key"></i> Alterar Senha</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <input type="hidden" name="user_id" id="senha-user-id">
+              <div class="mb-3">
+                <label class="form-label">Usuário</label>
+                <input type="text" id="senha-username" class="form-control" readonly>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Nova Senha</label>
+                <input type="password" name="nova_senha" class="form-control" required>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                <i class="bi bi-x-circle"></i> Cancelar
+              </button>
+              <button type="submit" class="btn btn-warning">
+                <i class="bi bi-save"></i> Salvar Senha
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+      
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Remove automaticamente alertas após 3 segundos
+setTimeout(() => {
+  document.querySelectorAll('.alert').forEach(a => {
+    a.classList.remove('show');
+    a.classList.add('fade');
+    setTimeout(() => a.remove(), 500);
+  });
+}, 3000);
+</script>
+<script>
+function abrirModalSenha(id, username) {
+  document.getElementById('senha-user-id').value = id;
+  document.getElementById('senha-username').value = username;
+  new bootstrap.Modal(document.getElementById('modalAlterarSenha')).show();
+}
+
+// Remove alertas automáticos
+setTimeout(() => {
+  document.querySelectorAll('.alert').forEach(a => {
+    a.classList.remove('show');
+    a.classList.add('fade');
+    setTimeout(() => a.remove(), 500);
+  });
+}, 3000);
+</script>
+
+{% endblock %}

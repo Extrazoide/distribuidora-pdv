@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3 class="mb-3"><i class="bi bi-journal-text"></i> Comandas</h3>
+
+<div class="mb-3">
+  <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalNovaComanda">
+    <i class="bi bi-plus-circle"></i> Nova Comanda
+  </button>
+</div>
+
+<table class="table table-hover table-striped shadow-sm bg-white">
+  <thead class="table-primary">
+  <tr>
+    <th>Número</th>
+    <th>Cliente</th>
+    <th>Observação</th>
+    <th>Status</th>
+    <th>Total (R$)</th>
+    <th>Operador</th> <!-- ✅ nova -->
+    <th>Ações</th>
+  </tr>
+</thead>
+
+  <tbody id="tbody-comandas">
+    {% for c in comandas %}
+    <tr id="comanda-{{ c.id }}">
+      <td>{{ c.numero }}</td>
+      <td>{{ c.cliente or "-" }}</td>
+      <td>{{ c.observacao or "-" }}</td>
+      <td>
+        {% if c.status == "aberta" %}
+          <span class="badge bg-success">Aberta</span>
+        {% else %}
+          <span class="badge bg-secondary">Fechada</span>
+        {% endif %}
+      </td>
+      <td>R$ {{ "%.2f"|format(c.total or 0) }}</td>
+      <td>{{ c.usuario or "-" }}</td>
+      <td>
+        {% if c.status == "aberta" %}
+        <button class="btn btn-primary btn-sm" onclick="abrirItens({{ c.id }}, '{{ c.numero }}')">
+          <i class="bi bi-cart-plus"></i> Itens
+        </button>
+        <button class="btn btn-danger btn-sm" onclick="abrirCaixa({{ c.id }})">
+          <i class="bi bi-lock"></i> Fechar
+        </button>
+        {% else %}
+        <button class="btn btn-secondary btn-sm" disabled><i class="bi bi-lock-fill"></i> Fechada</button>
+        {% endif %}
+        {% if c.status == "fechada" and session['role'] == 'admin' %}
+        <button class="btn btn-warning btn-sm btn-reabrir-comanda" data-id="{{ c.id }}">
+          <i class="bi bi-arrow-counterclockwise"></i> Reabrir
+        </button>
+        {% endif %}
+
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="text-center text-muted">Nenhuma comanda encontrada.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+
+<!-- Modal Nova Comanda -->
+<div class="modal fade" id="modalNovaComanda" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form class="modal-content" id="form-nova-comanda">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle"></i> Nova Comanda</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Número da Comanda</label>
+          <input type="text" id="numero-comanda" class="form-control" readonly>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Cliente (opcional)</label>
+          <input type="text" id="cliente-comanda" class="form-control">
+        </div>
+        <div class="mb-3">  
+          <label class="form-label">Observação</label>
+          <textarea id="observacao-comanda" class="form-control" rows="2" placeholder="Ex: Mesa 4, pedido especial..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Itens da Comanda -->
+<div class="modal fade" id="modalItensComanda" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-cart"></i> Itens da Comanda <span id="titulo-comanda"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <input type="text" id="codigo-barras-comanda" class="form-control" placeholder="📷 Ler Código de Barras" autofocus>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-6 position-relative">
+            <input type="text" id="codigo-ou-nome-comanda" class="form-control" placeholder="Código ou Nome do Produto" autocomplete="off">
+            <ul id="autocomplete-list-comanda" class="list-group position-absolute w-100"></ul>
+          </div>
+          <div class="col-md-2">
+            <input type="number" id="quantidade-comanda" class="form-control" value="1" min="1">
+          </div>
+          <div class="col-md-2">
+            <button id="btn-add-item-comanda" class="btn btn-success w-100">
+              <i class="bi bi-plus-circle"></i> Adicionar
+            </button>
+          </div>
+        </div>
+
+        <div id="msg-itens" class="text-muted fst-italic mb-2">Adicione produtos à comanda...</div>
+        <table class="table table-sm mt-2" id="tabela-itens">
+          <thead>
+            <tr>
+              <th>Produto</th>
+              <th class="text-center">Qtd</th>
+              <th class="text-end">Unit. (R$)</th>
+              <th class="text-end">Subtotal (R$)</th>
+              <th class="text-center">Ações</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+          <tfoot>
+            <tr>
+              <th colspan="4" class="text-end">Total:</th>
+              <th class="text-end" id="total-comanda">R$ 0,00</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Caixa -->
+<div class="modal fade" id="modalCaixaComanda" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content p-3">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-wallet2"></i> Fechamento de Comanda</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Forma de Pagamento</label>
+          <select id="forma-pagamento" class="form-select">
+            <option>Dinheiro</option>
+            <option>Cartão Crédito</option>
+            <option>Cartão Débito</option>
+            <option>PIX</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Desconto (R$)</label>
+          <input type="number" id="desconto-caixa" class="form-control" min="0" step="0.01" value="0">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Valor Recebido (R$)</label>
+          <input type="number" id="recebido-caixa" class="form-control" min="0" step="0.01">
+        </div>
+        <div class="row">
+          <div class="col-md-6">
+            <label class="form-label">Total Final (R$)</label>
+            <input type="text" id="total-final-caixa" class="form-control bg-light fw-bold" readonly>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Troco (R$)</label>
+            <input type="text" id="troco-caixa" class="form-control bg-light fw-bold" readonly>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x-circle"></i> Cancelar</button>
+        <button class="btn btn-success" id="confirmar-caixa"><i class="bi bi-cash-stack"></i> Confirmar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  let comandaAtual = null;
+  let totalAtual = 0;
+
+  const fmt = n => Number(n || 0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  // ---------------- NOVA COMANDA ----------------
+  const modalNovaComanda = document.getElementById("modalNovaComanda");
+  modalNovaComanda.addEventListener("show.bs.modal", async () => {
+    const res = await fetch("/ajax_proximo_numero_comanda");
+    const data = await res.json();
+    document.getElementById("numero-comanda").value = data.proximo || "";
+    document.getElementById("cliente-comanda").value = "";
+    document.getElementById("observacao-comanda").value = "";
+  });
+
+  document.getElementById("form-nova-comanda").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const numero = document.getElementById("numero-comanda").value.trim();
+    const cliente = document.getElementById("cliente-comanda").value.trim();
+    const observacao = document.getElementById("observacao-comanda").value.trim();
+    if (!numero) return alert("Número da comanda é obrigatório.");
+    const res = await fetch("/ajax_nova_comanda", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ numero, cliente, observacao })
+    });
+    const data = await res.json();
+    alert(data.msg);
+    if (data.status === "ok") location.reload();
+  });
+
+  // ---------------- FOCO INTELIGENTE (LEITOR) ----------------
+  const inputCodigo = document.getElementById('codigo-barras-comanda');
+  const manualNome = document.getElementById('codigo-ou-nome-comanda');
+  const manualQtd  = document.getElementById('quantidade-comanda');
+  const manualBtn  = document.getElementById('btn-add-item-comanda');
+
+  // Se true, não forçar foco no leitor (usuário está mexendo manualmente)
+  let focoManual = false;
+
+  const isManualField = (el) => {
+    return el === manualNome || el === manualQtd || el === manualBtn;
+  };
+
+  // Marca quando o usuário entra em campos manuais; se voltar ao leitor, destrava
+  document.addEventListener('focusin', (e) => {
+    if (isManualField(e.target)) focoManual = true;
+    if (e.target === inputCodigo) focoManual = false;
+  });
+
+  // Ao abrir o modal de itens, sempre começamos permitindo foco no leitor
+  document.getElementById('modalItensComanda').addEventListener('shown.bs.modal', () => {
+    focoManual = false;
+    setTimeout(() => { inputCodigo?.focus(); inputCodigo?.select?.(); }, 200);
+  });
+
+  const podeForcarFoco = () => {
+    const modalEl = document.getElementById('modalItensComanda');
+    return !focoManual && modalEl && modalEl.classList.contains('show');
+  };
+
+  // ---------------- LEITOR (AGORA USA QUANTIDADE DIGITADA) ----------------
+  inputCodigo?.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+    const codigo = inputCodigo.value.trim();
+    if (!codigo) return;
+
+    // 🔹 usa a quantidade digitada
+    const quantidade = parseInt(document.getElementById('quantidade-comanda').value || '1', 10);
+    inputCodigo.disabled = true;
+
+    const res = await fetch('/ajax_add_item_comanda_codigo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comanda_id: comandaAtual, codigo, quantidade })
+    });
+    const data = await res.json();
+
+    inputCodigo.value = '';
+    inputCodigo.disabled = false;
+
+    if (data.status === 'ok') {
+      await carregarItens();
+      await atualizarTotalLinha(comandaAtual);
+      if (podeForcarFoco()) setTimeout(() => inputCodigo.focus(), 60);
+    } else {
+      alert(data.msg || 'Produto não encontrado ou estoque insuficiente.');
+      if (podeForcarFoco()) setTimeout(() => inputCodigo.focus(), 60);
+    }
+  });
+
+
+
+  // ---------------- AUTOCOMPLETE E ADIÇÃO MANUAL ----------------
+  // ---------------- AUTOCOMPLETE COM SETAS + ENTER ----------------
+  const list = document.getElementById('autocomplete-list-comanda');
+  let selectedIndex2 = -1;
+
+  manualNome.addEventListener('input', async () => {
+    const q = manualNome.value.trim();
+    if (!q) {
+      list.innerHTML = '';
+      selectedIndex2 = -1;
+      return;
+    }
+
+    const res = await fetch(`/autocomplete_produto?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    list.innerHTML = '';
+
+    if (!data.length) return;
+
+    data.forEach((item, i) => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item list-group-item-action';
+      li.textContent = `${item.nome} (R$ ${item.preco.toFixed(2)} | Estoque: ${item.estoque})`;
+      li.onclick = () => {
+        manualNome.value = item.nome;
+        list.innerHTML = '';
+        selectedIndex2 = -1;
+      };
+      list.appendChild(li);
+    });
+
+    // seleciona automaticamente o primeiro
+    selectedIndex2 = 0;
+    list.children[selectedIndex2]?.classList.add('active');
+  });
+
+  manualNome.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('.list-group-item');
+    if (!items.length) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (selectedIndex2 < items.length - 1) selectedIndex2++;
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (selectedIndex2 > 0) selectedIndex2--;
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = items[selectedIndex2];
+      if (item) {
+        manualNome.value = item.textContent.split(' (')[0];
+        list.innerHTML = '';
+        selectedIndex2 = -1;
+      }
+    }
+
+    items.forEach((el, idx) => el.classList.toggle('active', idx === selectedIndex2));
+  });
+
+  document.addEventListener('click', e => {
+    if (!list.contains(e.target) && e.target !== manualNome) {
+      list.innerHTML = '';
+      selectedIndex2 = -1;
+    }
+  });
+
+  document.addEventListener('click', e=>{ if(e.target!==manualNome) list.innerHTML=''; });
+
+  manualBtn.addEventListener('click', async()=>{
+    const nome = manualNome.value.trim();
+    const quantidade = parseInt(manualQtd.value||"1",10);
+    if(!nome||quantidade<1) return alert("Informe produto e quantidade.");
+
+    const res = await fetch("/ajax_add_item_comanda_nome",{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ comanda_id: comandaAtual, nome, quantidade })
+    });
+    const data = await res.json();
+
+    if(data.status==="ok"){
+      manualNome.value="";
+      await carregarItens();
+      await atualizarTotalLinha(comandaAtual);
+
+      // Se o usuário estava usando manual, não forçamos foco
+      if (podeForcarFoco()) {
+        setTimeout(() => { inputCodigo.focus(); inputCodigo.select?.(); }, 60);
+      }
+    } else {
+      alert(data.msg);
+    }
+  });
+
+  // ---------------- ATUALIZA TOTAL NA LISTA ----------------
+  async function atualizarTotalLinha(comandaId){
+    const resTotal = await fetch(`/ajax_listar_itens_comanda/${comandaId}`);
+    const dados = await resTotal.json();
+    const linha = document.getElementById(`comanda-${comandaId}`);
+    if(linha) linha.querySelector("td:nth-child(5)").textContent = "R$ " + fmt(dados.total);
+  }
+
+  // ---------------- ABRIR ITENS ----------------
+  window.abrirItens = async (id, numero) => {
+    comandaAtual = id;
+    document.getElementById("titulo-comanda").textContent = `#${numero}`;
+    new bootstrap.Modal(document.getElementById("modalItensComanda")).show();
+    carregarItens();
+  };
+
+  async function carregarItens(){
+    const res = await fetch(`/ajax_listar_itens_comanda/${comandaAtual}`);
+    const data = await res.json();
+    const tbody = document.querySelector("#tabela-itens tbody");
+    const msg = document.getElementById("msg-itens");
+
+    tbody.innerHTML="";
+    if(!data.itens.length){
+      msg.textContent="Nenhum item na comanda.";
+    } else {
+      msg.textContent="";
+      data.itens.forEach(i=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML=`
+          <td>${i.nome}</td>
+          <td class="text-center">${i.quantidade}</td>
+          <td class="text-end">${fmt(i.preco_unitario)}</td>
+          <td class="text-end">${fmt(i.subtotal)}</td>
+          <td class="text-center">
+            <button class="btn btn-sm btn-danger" onclick="cancelarItem(${i.id})">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    document.getElementById("total-comanda").textContent = "R$ " + fmt(data.total);
+  }
+
+  // ---------------- CANCELAR ITEM ----------------
+  window.cancelarItem = async (id) => {
+    if(!confirm("Deseja realmente cancelar este item?")) return;
+    const res = await fetch(`/ajax_cancelar_item_comanda/${id}`,{ method:"POST" });
+    const data = await res.json();
+    alert(data.msg);
+    if(data.status==="ok"){
+      await carregarItens();
+      await atualizarTotalLinha(comandaAtual);
+      if (podeForcarFoco()) {
+        setTimeout(() => { inputCodigo.focus(); inputCodigo.select?.(); }, 60);
+      }
+    }
+  };
+
+  // ---------------- ABRIR/FECHAR CAIXA ----------------
+  window.abrirCaixa = async (id) => {
+    comandaAtual = id;
+    const res = await fetch(`/ajax_listar_itens_comanda/${id}`);
+    const data = await res.json();
+    totalAtual = parseFloat(data.total)||0;
+    document.getElementById('total-final-caixa').value = fmt(totalAtual);
+    document.getElementById('troco-caixa').value = "0,00";
+    new bootstrap.Modal(document.getElementById('modalCaixaComanda')).show();
+  }
+
+  const desconto = document.getElementById('desconto-caixa');
+  const recebido = document.getElementById('recebido-caixa');
+  function atualizarCaixa(){
+    const d=parseFloat(desconto.value)||0; const r=parseFloat(recebido.value)||0;
+    const f=Math.max(totalAtual-d,0); const t=Math.max(r-f,0);
+    document.getElementById('total-final-caixa').value=fmt(f);
+    document.getElementById('troco-caixa').value=fmt(t);
+  }
+  desconto.addEventListener('input', atualizarCaixa);
+  recebido.addEventListener('input', atualizarCaixa);
+
+  // ---------------- AJUSTE AUTOMÁTICO DE RECEBIDO (COMANDA) ----------------
+  const selectForma = document.getElementById('forma-pagamento');
+  const campoRecebido = document.getElementById('recebido-caixa');
+  const labelRecebido = campoRecebido.closest('.mb-3'); // pega o container do campo
+
+  selectForma.addEventListener('change', () => {
+    const forma = selectForma.value;
+    const total = parseFloat(totalAtual) || 0;
+
+    if (["PIX", "Cartão Crédito", "Cartão Débito"].includes(forma)) {
+      campoRecebido.value = total.toFixed(2);
+      labelRecebido.style.display = "none"; // oculta campo recebido
+    } else {
+      campoRecebido.value = "";
+      labelRecebido.style.display = "block"; // exibe campo novamente
+    }
+
+    atualizarCaixa(); // recalcula troco e total
+  });
+
+  // ---------------- CONFIRMAR FECHAMENTO (AJUSTADO) ----------------
+  document.getElementById('confirmar-caixa').addEventListener('click', async () => {
+    const d = parseFloat(desconto.value) || 0;
+    const forma = document.getElementById('forma-pagamento').value;
+    const totalFinal = parseFloat(document.getElementById('total-final-caixa').value.replace(",", ".")) || 0;
+
+    // 🔹 PIX / Cartões → recebido = total final
+    let r;
+    if (["PIX", "Cartão Crédito", "Cartão Débito"].includes(forma)) {
+      r = totalFinal;
+    } else {
+      r = parseFloat(recebido.value) || 0;
+    }
+
+    // 🔹 Validação obrigatória para dinheiro
+    if (forma === "Dinheiro" && (!r || r <= 0)) {
+      alert("⚠️ É obrigatório informar o valor recebido para pagamentos em dinheiro.");
+      document.getElementById('recebido-caixa').focus();
+      return;
+    }
+
+    const res = await fetch(`/ajax_fechar_comanda/${comandaAtual}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ desconto: d, recebido: r, forma_pagamento: forma })
+    });
+
+    const data = await res.json();
+    alert(data.msg);
+    if (data.status === "ok") setTimeout(() => location.reload(), 600);
+  });
+
+});
+// ========================= ATALHOS DE TECLADO =========================
+
+// 🔹 F2 → Adicionar item à comanda
+document.addEventListener("keydown", e => {
+  if (e.key === "F2") {
+    e.preventDefault();
+    const modalItens = document.getElementById("modalItensComanda");
+    if (modalItens.classList.contains("show")) {
+      document.getElementById("btn-add-item-comanda")?.click();
+    }
+  }
+});
+
+// 🔹 F4 → Abrir fechamento de caixa da comanda
+document.addEventListener("keydown", e => {
+  if (e.key === "F4") {
+    e.preventDefault();
+    const aberta = document.querySelector("button.btn.btn-danger.btn-sm[onclick^='abrirCaixa']");
+    aberta?.click();
+  }
+});
+
+// 🔹 Enter → Confirmar fechamento (quando modal de caixa aberto)
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && document.getElementById("modalCaixaComanda").classList.contains("show")) {
+    e.preventDefault();
+    document.getElementById("confirmar-caixa")?.click();
+  }
+});
+
+// 🔹 Esc → Fechar o modal de caixa
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && document.getElementById("modalCaixaComanda").classList.contains("show")) {
+    e.preventDefault();
+    const modal = bootstrap.Modal.getInstance(document.getElementById("modalCaixaComanda"));
+    modal?.hide();
+  }
+});
+// ======================================================
+// 🔹 REABRIR COMANDA (somente admin)
+// ======================================================
+document.addEventListener("click", async e => {
+  const btn = e.target.closest(".btn-reabrir-comanda");
+  if (!btn) return;
+
+  const comandaId = btn.dataset.id;
+  if (!confirm("⚠️ Deseja reabrir esta comanda? Ela voltará ao status 'aberta'.")) return;
+
+  const resp = await fetch(`/ajax_reabrir_comanda/${comandaId}`, { method: "POST" });
+  const data = await resp.json();
+  alert(data.msg);
+  if (data.status === "ok") location.reload();
+});
+
+</script>
+{% endblock %}

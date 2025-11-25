@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Relatório de Vendas{% endblock %}
+{% block content %}
+<h2>📊 Relatório de Vendas</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Mesa</th>
+            <th>Produto</th>
+            <th>Preço</th>
+            <th>Quantidade</th>
+            <th>Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% set total_geral = 0 %}
+        {% for v in vendas %}
+        <tr>
+            <td>{{ v['mesa'] }}</td>
+            <td>{{ v['nome'] }}</td>
+            <td>R$ {{ "%.2f"|format(v['preco']) }}</td>
+            <td>{{ v['quantidade'] }}</td>
+            <td>R$ {{ "%.2f"|format(v['total']) }}</td>
+        </tr>
+        {% set total_geral = total_geral + v['total'] %}
+        {% endfor %}
+    </tbody>
+</table>
+<h3>Total Geral: R$ {{ "%.2f"|format(total_geral) }}</h3>
+<br>
+<a href="{{ url_for('dashboard') }}">⬅️ Voltar</a>
+{% endblock %}

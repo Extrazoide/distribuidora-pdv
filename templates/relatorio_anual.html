@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-4"><i class="bi bi-graph-up"></i> Relatório Anual</h3>
+
+<form method="get" class="mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label fw-semibold">Selecione o Ano:</label>
+      <input type="number" name="ano" class="form-control shadow-sm" value="{{ ano }}">
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary w-100 shadow-sm"><i class="bi bi-search"></i> Gerar</button>
+    </div>
+  </div>
+</form>
+
+<!-- Card com gráfico -->
+<div class="card shadow-sm border-0 p-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="text-primary fw-bold mb-0"><i class="bi bi-bar-chart-line"></i> Vendas por Mês</h5>
+    <span class="badge bg-secondary fs-6">Ano {{ ano }}</span>
+  </div>
+  <canvas id="graficoVendas" height="110"></canvas>
+</div>
+
+<!-- Card com tabela -->
+<div class="card shadow-sm border-0 p-4">
+  <h5 class="mb-3 text-primary fw-bold"><i class="bi bi-table"></i> Detalhamento Mensal</h5>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle text-center">
+      <thead class="table-primary">
+        <tr>
+          <th scope="col">Mês</th>
+          <th scope="col">Total de Vendas (R$)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in range(12) %}
+        <tr>
+          <td class="fw-semibold">{{ labels[i] }}</td>
+          <td>R$ {{ "%.2f"|format(valores[i]) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const ctx = document.getElementById('graficoVendas').getContext('2d');
+
+// Detecta tema atual
+function getChartColors() {
+  const theme = document.documentElement.getAttribute("data-bs-theme");
+  const isDark = theme === "dark";
+  return {
+    text: isDark ? '#e6e6e6' : '#212529',
+    grid: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+    bar: isDark ? 'rgba(13,110,253,0.8)' : 'rgba(13,110,253,0.7)',
+  };
+}
+
+let colors = getChartColors();
+
+const chart = new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels: {{ labels|tojson }},
+    datasets: [{
+      label: 'Total de Vendas (R$)',
+      data: {{ valores|tojson }},
+      backgroundColor: colors.bar,
+      borderColor: 'rgba(13,110,253,1)',
+      borderWidth: 1,
+      borderRadius: 5
+    }]
+  },
+  options: {
+    responsive: true,
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: { color: colors.text, callback: v => 'R$ ' + v.toFixed(2) },
+        grid: { color: colors.grid }
+      },
+      x: {
+        ticks: { color: colors.text },
+        grid: { color: colors.grid }
+      }
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: ctx => 'R$ ' + ctx.parsed.y.toFixed(2)
+        }
+      }
+    }
+  }
+});
+
+// Atualiza cores do gráfico quando o tema muda 🌙☀️
+const themeButton = document.getElementById('btn-theme');
+if (themeButton) {
+  themeButton.addEventListener('click', () => {
+    setTimeout(() => {
+      colors = getChartColors();
+      chart.options.scales.x.ticks.color = colors.text;
+      chart.options.scales.y.ticks.color = colors.text;
+      chart.options.scales.x.grid.color = colors.grid;
+      chart.options.scales.y.grid.color = colors.grid;
+      chart.data.datasets[0].backgroundColor = colors.bar;
+      chart.update();
+    }, 250);
+  });
+}
+</script>
+{% endblock %}
