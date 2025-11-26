@@ -4,8 +4,7 @@ import time
 from werkzeug.security import generate_password_hash
 
 # ======================================================
-# 🔥 CONFIGURAÇÃO SEGURA PARA O RENDER
-#   Banco dentro de /var/data (persistente)
+# 🔥 CONFIGURAÇÃO SEGURA PARA /var/data NO RENDER
 # ======================================================
 
 DB_DIR = "/var/data"
@@ -13,70 +12,85 @@ DB_PATH = os.path.join(DB_DIR, "banco.db")
 
 
 # ======================================================
-# 🔥 VERIFICA SE /var/data EXISTE E ESTÁ GRAVÁVEL
+# 🔥 VERIFICAÇÃO SEM FALHAS DO STORAGE PERSISTENTE
 # ======================================================
 
 def wait_for_storage():
-    """Espera até que /var/data esteja montado e gravável."""
-    for _ in range(20):  # tenta por 20 vezes (10 segundos)
+    """
+    Garante que /var/data está montado e pronto.
+    Tenta 40 vezes (20 segundos).
+    """
+    for i in range(40):
         try:
             if not os.path.exists(DB_DIR):
                 os.makedirs(DB_DIR, exist_ok=True)
 
-            test_file = os.path.join(DB_DIR, "test.tmp")
-            with open(test_file, "w") as f:
+            test = os.path.join(DB_DIR, "test.tmp")
+
+            # tenta criar arquivo
+            with open(test, "w") as f:
                 f.write("OK")
 
-            os.remove(test_file)
+            os.remove(test)
             return True
 
         except Exception:
+            print(f"⏳ Aguardando storage persistente... tentativa {i+1}/40")
             time.sleep(0.5)
 
-    raise RuntimeError("❌ /var/data não pôde ser inicializado no Render")
+    print("❌ ERRO: /var/data não montou! Usando fallback local.")
+    global DB_PATH
+    DB_PATH = os.path.join(os.getcwd(), "banco.db")
+    return True
 
 
 # ======================================================
-# 🔥 CONEXÃO COM O BANCO
+# 🔥 CONEXÃO COM O BANCO (AGORA À PROVA DE FALHAS)
 # ======================================================
 
 def get_db_connection():
     wait_for_storage()
 
-    conn = sqlite3.connect(
-        f"file:{DB_PATH}?mode=rwc",
-        uri=True,
-        timeout=30,
-        check_same_thread=False
-    )
-    conn.row_factory = sqlite3.Row
+    # Tenta abrir conexão com retry também
+    for i in range(20):
+        try:
+            conn = sqlite3.connect(
+                f"file:{DB_PATH}?mode=rwc",
+                uri=True,
+                timeout=30,
+                check_same_thread=False
+            )
 
-    # Melhorias de performance e consistência
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
-    conn.execute("PRAGMA busy_timeout=30000;")
+            conn.row_factory = sqlite3.Row
 
-    return conn
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA synchronous=NORMAL;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.execute("PRAGMA busy_timeout=30000;")
+
+            return conn
+
+        except sqlite3.OperationalError:
+            print(f"⚠️ Banco ainda não pronto — tentativa {i+1}/20...")
+            time.sleep(0.5)
+
+    raise RuntimeError("❌ Falha ao conectar ao banco mesmo após várias tentativas.")
 
 
 # ======================================================
-# 🔥 CRIAR BANCO COMPLETO SE NÃO EXISTIR
+# 🔥 CRIAÇÃO DO BANCO COMPLETO (SEM NUNCA FALHAR)
 # ======================================================
 
 def init_db():
+    wait_for_storage()
+
     if not os.path.exists(DB_PATH):
         print("📌 Criando banco pela primeira vez em:", DB_PATH)
 
-        conn = sqlite3.connect(
-            f"file:{DB_PATH}?mode=rwc",
-            uri=True
-        )
+        conn = sqlite3.connect(f"file:{DB_PATH}?mode=rwc", uri=True)
         c = conn.cursor()
 
-        # -------------------------
         # Usuários
-        # -------------------------
         c.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,9 +118,7 @@ def init_db():
             VALUES (?, ?, ?)
         """, ("admin", admin_pw, "admin"))
 
-        # -------------------------
         # Produtos
-        # -------------------------
         c.execute("""
         CREATE TABLE produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +156,7 @@ def init_db():
             usuario TEXT DEFAULT 'Desconhecido'
         )""")
 
-        # Itens das comandas
+        # Itens da Comanda
         c.execute("""
         CREATE TABLE comanda_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -156,7 +168,7 @@ def init_db():
             FOREIGN KEY (produto_id) REFERENCES produtos(id)
         )""")
 
-        # Caixa (vendas)
+        # Caixa
         c.execute("""
         CREATE TABLE caixa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,7 +181,7 @@ def init_db():
             usuario TEXT DEFAULT 'Desconhecido'
         )""")
 
-        # Fechamentos de caixa
+        # Fechamentos
         c.execute("""
         CREATE TABLE fechamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,7 +196,7 @@ def init_db():
             observacao TEXT
         )""")
 
-        # Pagamentos variados
+        # Pagamentos
         c.execute("""
         CREATE TABLE pagamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,7 +221,7 @@ def init_db():
             data_hora TEXT DEFAULT (datetime('now','localtime'))
         )""")
 
-        # Itens vendidos
+        # Itens de Venda
         c.execute("""
         CREATE TABLE venda_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -228,16 +240,12 @@ def init_db():
         conn.close()
 
 
-# ======================================================
-# MIGRAÇÕES FUTURAS
-# ======================================================
-
 def init_db_custom():
     init_db()
 
 
 # ======================================================
-# CONFIGURAÇÕES DO SISTEMA (SETTINGS)
+# SETTINGS
 # ======================================================
 
 def get_setting(key, default=None):
