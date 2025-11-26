@@ -3,31 +3,23 @@ import os
 import time
 from werkzeug.security import generate_password_hash
 
-# ============================================================
-# 🔥 CONFIG: Diretório persistente no Render
-# ============================================================
 DB_DIR = "/var/data"
 DB_PATH = os.path.join(DB_DIR, "banco.db")
 
-# Flags internas
 storage_ready = False
 global_conn = None
 
 
 # ============================================================
-# 🔥 CHECA /var/data UMA ÚNICA VEZ
+# 🔥 Certifica que /var/data existe (roda uma vez só)
 # ============================================================
 def prepare_storage_once():
-    """
-    Verifica se /var/data está disponível (Render) e acessível.
-    Só roda 1 vez, deixando o sistema muito mais rápido.
-    """
     global storage_ready, DB_PATH
 
     if storage_ready:
         return
 
-    for _ in range(40):  # tenta por no máx. 8 segundos
+    for _ in range(40):
         try:
             if not os.path.exists(DB_DIR):
                 os.makedirs(DB_DIR, exist_ok=True)
@@ -43,39 +35,51 @@ def prepare_storage_once():
         except Exception:
             time.sleep(0.2)
 
-    # fallback (apenas se /var/data falhar)
-    print("⚠️ /var/data indisponível. Usando banco local.")
+    print("⚠️ /var/data indisponível — usando banco local")
     DB_PATH = os.path.join(os.getcwd(), "banco.db")
     storage_ready = True
 
 
 # ============================================================
-# 🔥 CONEXÃO GLOBAL (rápida e eficiente)
+# 🔥 Função para criar conexão
+# ============================================================
+def create_connection():
+    conn = sqlite3.connect(
+        DB_PATH,
+        timeout=30,
+        check_same_thread=False
+    )
+    conn.row_factory = sqlite3.Row
+
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA foreign_keys=ON;")
+    conn.execute("PRAGMA busy_timeout=30000;")
+
+    return conn
+
+
+# ============================================================
+# 🔥 CONEXÃO GLOBAL (com auto-reconstrução)
 # ============================================================
 def get_db_connection():
-    """
-    Mantém uma conexão única por processo.
-    Faz PRAGMA apenas uma vez (muito mais rápido).
-    """
     global global_conn
-
     prepare_storage_once()
 
+    # 1. Não existe ainda?
     if global_conn is None:
-        global_conn = sqlite3.connect(
-            DB_PATH,
-            timeout=30,
-            check_same_thread=False
-        )
-        global_conn.row_factory = sqlite3.Row
+        global_conn = create_connection()
+        return global_conn
 
-        # PRAGMAS só na criação da conexão
-        global_conn.execute("PRAGMA journal_mode = WAL;")
-        global_conn.execute("PRAGMA synchronous = NORMAL;")
-        global_conn.execute("PRAGMA foreign_keys = ON;")
-        global_conn.execute("PRAGMA busy_timeout = 30000;")
+    # 2. Existe mas foi fechada pelo sistema?
+    try:
+        global_conn.execute("SELECT 1;")
+    except sqlite3.ProgrammingError:
+        print("⚠️ Conexão SQLite estava fechada. Reconectando...")
+        global_conn = create_connection()
 
     return global_conn
+
 
 
 # ============================================================
@@ -296,3 +300,4 @@ def set_setting(key, value):
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
     """, (key, value))
     conn.commit()
+
