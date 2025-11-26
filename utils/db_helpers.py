@@ -1,25 +1,31 @@
 import sqlite3
 import os
+import time
 from werkzeug.security import generate_password_hash
 
-# 📌 Caminho seguro e persistente no Render
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # utils/
-ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # raiz do projeto
-
-DB_DIR = os.path.join(ROOT_DIR, "instance")
-os.makedirs(DB_DIR, exist_ok=True)
-
+# 📌 Diretório realmente persistente no Render
+DB_DIR = "/var/data"
 DB_PATH = os.path.join(DB_DIR, "banco.db")
+
+# 🔧 Garante que o Render montou a pasta antes de usar
+def ensure_data_dir():
+    for _ in range(10):  # tenta por 5 segundos
+        try:
+            os.makedirs(DB_DIR, exist_ok=True)
+            return
+        except PermissionError:
+            time.sleep(0.5)
 
 
 # -------------------------
 # Conexão com o Banco
 # -------------------------
 def get_db_connection():
+    ensure_data_dir()
     conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
-    # 🔧 Melhorias
+    # 🔧 Melhorias SQLite
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
@@ -32,12 +38,16 @@ def get_db_connection():
 # Inicialização do Banco
 # -------------------------
 def init_db():
-    """Cria o banco se não existir e garante as colunas/tabelas iniciais."""
+    ensure_data_dir()
+
     if not os.path.exists(DB_PATH):
+        print("📌 Criando banco pela primeira vez em:", DB_PATH)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
+        # -------------------------------
         # Usuários
+        # -------------------------------
         c.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +115,7 @@ def init_db():
         )
         """)
 
-        # Itens de Comandas
+        # Itens da Comanda
         c.execute("""
         CREATE TABLE comanda_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,12 +203,10 @@ def init_db():
 
         conn.commit()
         conn.close()
-        print("✅ Banco criado no Render em:", DB_PATH)
+        print("✅ Banco criado com sucesso.")
+    else:
+        print("👍 Banco já existe — NÃO recriando.")
 
-
-# -------------------------
-# Migrações incrementais
-# -------------------------
 def init_db_custom():
     init_db()
 
@@ -222,4 +230,3 @@ def set_setting(key, value):
     """, (key, value))
     conn.commit()
     conn.close()
-
