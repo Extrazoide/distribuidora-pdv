@@ -3,29 +3,55 @@ import os
 import time
 from werkzeug.security import generate_password_hash
 
-# 📌 Diretório realmente persistente no Render
+# ======================================================
+# 🔥 CONFIGURAÇÃO SEGURA PARA O RENDER
+#   Banco dentro de /var/data (persistente)
+# ======================================================
+
 DB_DIR = "/var/data"
 DB_PATH = os.path.join(DB_DIR, "banco.db")
 
-# 🔧 Garante que o Render montou a pasta antes de usar
-def ensure_data_dir():
-    for _ in range(10):  # tenta por 5 segundos
+
+# ======================================================
+# 🔥 VERIFICA SE /var/data EXISTE E ESTÁ GRAVÁVEL
+# ======================================================
+
+def wait_for_storage():
+    """Espera até que /var/data esteja montado e gravável."""
+    for _ in range(20):  # tenta por 20 vezes (10 segundos)
         try:
-            os.makedirs(DB_DIR, exist_ok=True)
-            return
-        except PermissionError:
+            if not os.path.exists(DB_DIR):
+                os.makedirs(DB_DIR, exist_ok=True)
+
+            test_file = os.path.join(DB_DIR, "test.tmp")
+            with open(test_file, "w") as f:
+                f.write("OK")
+
+            os.remove(test_file)
+            return True
+
+        except Exception:
             time.sleep(0.5)
 
+    raise RuntimeError("❌ /var/data não pôde ser inicializado no Render")
 
-# -------------------------
-# Conexão com o Banco
-# -------------------------
+
+# ======================================================
+# 🔥 CONEXÃO COM O BANCO
+# ======================================================
+
 def get_db_connection():
-    ensure_data_dir()
-    conn = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    wait_for_storage()
+
+    conn = sqlite3.connect(
+        f"file:{DB_PATH}?mode=rwc",
+        uri=True,
+        timeout=30,
+        check_same_thread=False
+    )
     conn.row_factory = sqlite3.Row
 
-    # 🔧 Melhorias SQLite
+    # Melhorias de performance e consistência
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
@@ -34,47 +60,53 @@ def get_db_connection():
     return conn
 
 
-# -------------------------
-# Inicialização do Banco
-# -------------------------
-def init_db():
-    ensure_data_dir()
+# ======================================================
+# 🔥 CRIAR BANCO COMPLETO SE NÃO EXISTIR
+# ======================================================
 
+def init_db():
     if not os.path.exists(DB_PATH):
         print("📌 Criando banco pela primeira vez em:", DB_PATH)
-        conn = sqlite3.connect(DB_PATH)
+
+        conn = sqlite3.connect(
+            f"file:{DB_PATH}?mode=rwc",
+            uri=True
+        )
         c = conn.cursor()
 
-        # -------------------------------
+        # -------------------------
         # Usuários
-        # -------------------------------
+        # -------------------------
         c.execute("""
         CREATE TABLE users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'attendant'
-        )
-        """)
+        )""")
 
         # Configurações
         c.execute("""
         CREATE TABLE settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        )""")
+
+        c.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            ("commerce_name", "ROYAL BEBIDAS")
         )
-        """)
-        c.execute("INSERT INTO settings (key, value) VALUES (?,?)",
-                  ("commerce_name", "ROYAL BEBIDAS"))
 
         # Admin padrão
         admin_pw = generate_password_hash("1234")
         c.execute("""
             INSERT INTO users (username, password_hash, role)
-            VALUES (?,?,?)
+            VALUES (?, ?, ?)
         """, ("admin", admin_pw, "admin"))
 
+        # -------------------------
         # Produtos
+        # -------------------------
         c.execute("""
         CREATE TABLE produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,8 +116,7 @@ def init_db():
             estoque INTEGER NOT NULL,
             categoria TEXT DEFAULT 'Outros',
             ativo INTEGER DEFAULT 1
-        )
-        """)
+        )""")
 
         # Pedidos
         c.execute("""
@@ -96,8 +127,7 @@ def init_db():
             status TEXT DEFAULT 'aberta',
             usuario TEXT DEFAULT 'Desconhecido',
             FOREIGN KEY (produto_id) REFERENCES produtos(id)
-        )
-        """)
+        )""")
 
         # Comandas
         c.execute("""
@@ -112,10 +142,9 @@ def init_db():
             recebido REAL DEFAULT 0,
             troco REAL DEFAULT 0,
             usuario TEXT DEFAULT 'Desconhecido'
-        )
-        """)
+        )""")
 
-        # Itens da Comanda
+        # Itens das comandas
         c.execute("""
         CREATE TABLE comanda_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,10 +154,9 @@ def init_db():
             preco_unitario REAL,
             FOREIGN KEY (comanda_id) REFERENCES comandas(id),
             FOREIGN KEY (produto_id) REFERENCES produtos(id)
-        )
-        """)
+        )""")
 
-        # Caixa
+        # Caixa (vendas)
         c.execute("""
         CREATE TABLE caixa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,10 +167,9 @@ def init_db():
             troco REAL,
             forma_pagamento TEXT DEFAULT 'Dinheiro',
             usuario TEXT DEFAULT 'Desconhecido'
-        )
-        """)
+        )""")
 
-        # Fechamentos
+        # Fechamentos de caixa
         c.execute("""
         CREATE TABLE fechamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,10 +182,9 @@ def init_db():
             total_troco REAL,
             total_liquido REAL,
             observacao TEXT
-        )
-        """)
+        )""")
 
-        # Pagamentos
+        # Pagamentos variados
         c.execute("""
         CREATE TABLE pagamentos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -169,8 +195,7 @@ def init_db():
             data_hora TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (venda_id) REFERENCES caixa(id),
             FOREIGN KEY (comanda_id) REFERENCES comandas(id)
-        )
-        """)
+        )""")
 
         # Cancelamentos
         c.execute("""
@@ -182,10 +207,9 @@ def init_db():
             preco_unitario REAL,
             usuario TEXT,
             data_hora TEXT DEFAULT (datetime('now','localtime'))
-        )
-        """)
+        )""")
 
-        # Itens de Venda
+        # Itens vendidos
         c.execute("""
         CREATE TABLE venda_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -198,22 +222,24 @@ def init_db():
             data_hora TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (venda_id) REFERENCES caixa(id),
             FOREIGN KEY (produto_id) REFERENCES produtos(id)
-        )
-        """)
+        )""")
 
         conn.commit()
         conn.close()
-        print("✅ Banco criado com sucesso.")
-    else:
-        print("👍 Banco já existe — NÃO recriando.")
+
+
+# ======================================================
+# MIGRAÇÕES FUTURAS
+# ======================================================
 
 def init_db_custom():
     init_db()
 
 
-# -------------------------
-# Configurações utilitárias
-# -------------------------
+# ======================================================
+# CONFIGURAÇÕES DO SISTEMA (SETTINGS)
+# ======================================================
+
 def get_setting(key, default=None):
     conn = get_db_connection()
     r = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
